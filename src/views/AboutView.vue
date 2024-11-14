@@ -26,9 +26,24 @@ export default {
   mounted() {
     this.initDatabase()
     //nouvelle méthode pour créer un document
-    this.putDocument(this.createDocument())
+    // Ajouter un document de test avec `postDocument`
+    const newDocument = this.createDocument()
+    this.postDocument(newDocument)
     this.fetchData()
+        // Mise à jour simulée après un délai pour tester `updateDocument`
+        setTimeout(() => {
+      const updatedDocument = {
+        ...newDocument,
+        doc: {
+          ...newDocument.doc,
+          post_content: 'tigre mis à jour' // contenu mis à jour
+        }
+      }
+      this.updateDocument(updatedDocument)
+    }, 2000) // attendre 2 secondes avant de mettre à jour
   },
+
+ 
 
   methods: {
     //nouvelle méthode pour créer un document
@@ -54,6 +69,45 @@ export default {
           })
           .catch((error) => {
             console.log('Add ko', error)
+          })
+      }
+    },
+
+    // ajout d'un document sans `_id` explicite avec `post`
+    postDocument(document: Post) {
+      const db = ref(this.storage).value
+      if (db) {
+        db.post(document)
+          .then((response) => {
+            console.log('Post successful', response)
+          })
+          .catch((error) => {
+            console.log('Post failed', error)
+          })
+      }
+    },
+
+       // nouvelle méthode pour mettre à jour d'un document avec `_id` et `_rev`
+       updateDocument(updatedDocument: Post) {
+      const db = ref(this.storage).value
+      if (db && updatedDocument._id) {
+        db.get(updatedDocument._id)
+          .then((doc) => {
+            // mise à jour des données avec la bonne révision
+            const updatedDoc = {
+              ...doc,
+              ...updatedDocument,
+              _rev: doc._rev
+            }
+
+            return db.put(updatedDoc)
+          })
+          .then(() => {
+            console.log('Update successful')
+            this.fetchData() // rafraîchir les données
+          })
+          .catch((error) => {
+            console.log('Update failed', error)
           })
       }
     },
