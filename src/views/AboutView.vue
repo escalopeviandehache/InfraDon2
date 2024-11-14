@@ -4,7 +4,8 @@ import PouchDB from 'pouchdb'
 
 declare interface Post {
   _id: string
-  doc: {
+  _rev: string
+  doc?: {
     post_name: string
     post_content: string
     attributes: {
@@ -25,90 +26,56 @@ export default {
 
   mounted() {
     this.initDatabase()
-    //nouvelle méthode pour créer un document
-    // Ajouter un document de test avec `postDocument`
-    const newDocument = this.createDocument()
-    this.postDocument(newDocument)
     this.fetchData()
-        // Mise à jour simulée après un délai pour tester `updateDocument`
-        setTimeout(() => {
-      const updatedDocument = {
-        ...newDocument,
-        doc: {
-          ...newDocument.doc,
-          post_content: 'tigre mis à jour' // contenu mis à jour
-        }
-      }
-      this.updateDocument(updatedDocument)
-    }, 2000) // attendre 2 secondes avant de mettre à jour
+    this.deleteData({
+      _id: '6bab3ac593d9ec8c0a61a0b3e40515e2',
+      _rev: '7-1121e553d66c9145cf69b51a56cd380f'
+    })
   },
 
- 
-
   methods: {
-    //nouvelle méthode pour créer un document
-    createDocument() {
-      return {
-        _id: new Date().toISOString(), // création d'un identifiant unique basé sur la date
-        doc: {
-          post_name: 'tigre',
-          post_content: 'tigre 2',
-          attributes: {
-            creation_date: new Date().toLocaleDateString()
-          }
-        }
+    async updateData(document: Post) {
+      const db = this.storage
+
+      // Vérifier si le stockage est bien défini
+      if (!db) {
+        console.error("Le stockage n'est pas défini.")
+        return
+      }
+
+      try {
+        // Récupérer le document existant pour obtenir son _rev (version)
+        const existingDoc = await db.get(document._id)
+        document._rev = existingDoc._rev // Assigner _rev pour la mise à jour
+
+        // Mettre à jour le document
+        await db.put(document)
+        console.log('Mise à jour réussie')
+      } catch (error) {
+        console.error('Erreur lors de la mise à jour', error)
       }
     },
 
-    putDocument(document: Post) {
-      const db = ref(this.storage).value
-      if (db) {
-        db.put(document)
-          .then(() => {
-            console.log('Add ok')
-          })
-          .catch((error) => {
-            console.log('Add ko', error)
-          })
+    async deleteData(document: Post) {
+      console.log('entrée dans la méthode delete')
+      const db = this.storage
+
+      // Vérifier si le stockage est bien défini
+      if (!db) {
+        console.error("Le stockage n'est pas défini.")
+        return
       }
-    },
 
-    // ajout d'un document sans `_id` explicite avec `post`
-    postDocument(document: Post) {
-      const db = ref(this.storage).value
-      if (db) {
-        db.post(document)
-          .then((response) => {
-            console.log('Post successful', response)
-          })
-          .catch((error) => {
-            console.log('Post failed', error)
-          })
-      }
-    },
+      try {
+        console.log('try delete')
 
-       // nouvelle méthode pour mettre à jour d'un document avec `_id` et `_rev`
-       updateDocument(updatedDocument: Post) {
-      const db = ref(this.storage).value
-      if (db && updatedDocument._id) {
-        db.get(updatedDocument._id)
-          .then((doc) => {
-            // mise à jour des données avec la bonne révision
-            const updatedDoc = {
-              ...doc,
-              ...updatedDocument,
-              _rev: doc._rev
-            }
-
-            return db.put(updatedDoc)
-          })
-          .then(() => {
-            console.log('Update successful')
-            this.fetchData() // rafraîchir les données
-          })
-          .catch((error) => {
-            console.log('Update failed', error)
-          })
+        // Récupérer le document existant pour obtenir son _rev
+        const existingDoc = await db.get(document._id)
+        await db.remove(existingDoc._id, existingDoc._rev)
+        console.log('Suppression réussie')
+      } catch (error) {
+        console.log('catch delete')
+        console.error('Erreur lors de la suppression', error)
       }
     },
 
@@ -133,20 +100,21 @@ export default {
       }
     },
 
+    createData(document: Post) {
+      const db = ref(this.storage)
+      try {
+        if (document) {
+          db.value?.post(document)
+        }
+      } catch (e) {
+        throw new Error('Impossible de modifer le document')
+      }
+    },
+
     initDatabase() {
       const db = new PouchDB('http://admin:admin@localhost:5984/database')
       if (db) {
-        console.log("Connected to collection 'database'")
-      } else {
-        console.warn('Something went wrong')
-      }
-      this.storage = db
-    },
-
-    initDatabaseLocal() {
-      const db = new PouchDB('Test')
-      if (db) {
-        console.log("Connected to collection 'database'")
+        console.log("Connected to collection 'post'")
       } else {
         console.warn('Something went wrong')
       }
@@ -157,15 +125,17 @@ export default {
 </script>
 
 <template>
-  <h1>Nombre de post: {{ postsData.length }}</h1>
-  <ul>
-    <li v-for="post in postsData" :key="post._id">
-      <div class="ucfirst">
-        {{ post.doc.post_name
-        }}<em style="font-size: x-small" v-if="post.doc.attributes?.creation_date">
-          - {{ post.doc.attributes?.creation_date }}
-        </em>
-      </div>
-    </li>
-  </ul>
+  <div>
+    <h1>Nombre de post: {{ postsData.length }}</h1>
+    <ul>
+      <li v-for="post in postsData" :key="post._id">
+        <div class="ucfirst">
+          {{ post.doc?.post_name
+          }}<em style="font-size: x-small" v-if="post.doc?.attributes?.creation_date">
+            - {{ post.doc?.attributes?.creation_date }}
+          </em>
+        </div>
+      </li>
+    </ul>
+  </div>
 </template>
