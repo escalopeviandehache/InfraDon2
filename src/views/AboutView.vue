@@ -4,12 +4,13 @@ import PouchDB from 'pouchdb'
 
 declare interface Post {
   _id: string
-  _rev: string
-  doc?: {
+  _rev?: string
+  doc: {
     post_name: string
     post_content: string
     attributes: {
       creation_date: string
+      modified: string
     }
   }
 }
@@ -27,9 +28,27 @@ export default {
   mounted() {
     this.initDatabase()
     this.fetchData()
-    this.deleteData({
-      _id: '6bab3ac593d9ec8c0a61a0b3e40515e2',
-      _rev: '7-1121e553d66c9145cf69b51a56cd380f'
+    this.createData({
+      _id: '1',
+      doc: {
+        post_name: 'Post 1',
+        post_content: 'Contenu du post 1',
+        attributes: {
+          creation_date: '2021-09-01',
+          modified: 'not yet'
+        }
+      }
+    })
+    this.updateData({
+      _id: '1',
+      doc: {
+        post_name: 'Post 1',
+        post_content: 'Contenu du post 1',
+        attributes: {
+          creation_date: '2021-09-01',
+          modified: 'yes'
+        }
+      }
     })
   },
 
@@ -67,8 +86,6 @@ export default {
       }
 
       try {
-        console.log('try delete')
-
         // Récupérer le document existant pour obtenir son _rev
         const existingDoc = await db.get(document._id)
         await db.remove(existingDoc._id, existingDoc._rev)
@@ -130,9 +147,9 @@ export default {
     <ul>
       <li v-for="post in postsData" :key="post._id">
         <div class="ucfirst">
-          {{ post.doc?.post_name
-          }}<em style="font-size: x-small" v-if="post.doc?.attributes?.creation_date">
-            - {{ post.doc?.attributes?.creation_date }}
+          {{ post.doc.post_name
+          }}<em style="font-size: x-small" v-if="post.doc.attributes?.creation_date">
+            - {{ post.doc.attributes?.creation_date }}
           </em>
         </div>
       </li>
