@@ -9,10 +9,20 @@ interface Post {
   _rev?: string
   title: string
   content: string
-  attributes: {
-    creation_date: string
-    modified: string
+  creation_date: string
+  modified: string
+  _attachments?: {
+    [key: string]: {
+      content_type: string
+      data: string
+    }
   }
+}
+
+interface PostAttachment {
+  name: string
+  type: string
+  data: Blob
 }
 
 export default defineComponent({
@@ -24,18 +34,31 @@ export default defineComponent({
       posts: [] as Post[],
       newPost: {
         title: '',
-        content: ''
+        content: '',
+        attachments: [] as PostAttachment[]
       },
+      searchQuery: '',
       isEditing: false,
       currentEditId: null as string | null,
-      error: null as string | null
+      error: null as string | null,
     }
   },
 
   computed: {
     sortedPosts() {
-      return [...this.posts].sort((a, b) => 
-        new Date(b.attributes.creation_date).getTime() - new Date(a.attributes.creation_date).getTime()
+      let filtered = [...this.posts]
+
+      if (this.searchQuery) {
+        const query = this.searchQuery.toLowerCase()
+        filtered = filtered.filter(post => 
+          post.title.toLowerCase().includes(query) || 
+          post.content.toLowerCase().includes(query)
+        )
+      }
+
+      return filtered.sort((a, b) => 
+        new Date(b.creation_date).getTime() - 
+        new Date(a.creation_date).getTime()
       )
     }
   },
@@ -43,13 +66,15 @@ export default defineComponent({
   methods: {
     async initDatabases() {
       try {
-        // Local database
         this.localDb = new PouchDB<Post>('posts')
-        
-        // Remote database
         this.remoteDb = new PouchDB('http://admin:admin@localhost:5984/database')
         
-        // Set up sync
+        await this.localDb.createIndex({
+          index: {
+            fields: ['title', 'content']
+          }
+        })
+
         if (this.localDb && this.remoteDb) {
           PouchDB.sync(this.localDb, this.remoteDb, {
             live: true,
@@ -58,14 +83,14 @@ export default defineComponent({
             this.fetchPosts()
           }).on('error', (error) => {
             console.error('Sync error:', error)
-            this.error = 'Erreur de synchronisation avec le serveur'
+            this.error = 'Erreur de synchronisation'
           })
         }
 
         await this.fetchPosts()
       } catch (error) {
-        console.error('Database initialization error:', error)
-        this.error = 'Erreur d\'initialisation de la base de données'
+        console.error('Database error:', error)
+        this.error = 'Erreur de base de données'
       }
     },
 
@@ -75,14 +100,27 @@ export default defineComponent({
       try {
         const result = await this.localDb.allDocs({
           include_docs: true,
-          attachments: true
+          attachments: true,
+          binary: true
         })
         this.posts = result.rows.map(row => row.doc as Post)
         this.error = null
       } catch (error) {
         console.error('Fetch error:', error)
-        this.error = 'Erreur lors de la récupération des posts'
+        this.error = 'Erreur de récupération'
       }
+    },
+
+    async handleFileUpload(event: Event) {
+      const input = event.target as HTMLInputElement
+      if (!input.files?.length) return
+
+      const file = input.files[0]
+      this.newPost.attachments.push({
+        name: file.name,
+        type: file.type,
+        data: file
+      })
     },
 
     async addPost() {
@@ -93,78 +131,153 @@ export default defineComponent({
           _id: new Date().toISOString(),
           title: this.newPost.title.trim(),
           content: this.newPost.content.trim(),
-          attributes: {
-            creation_date: new Date().toISOString(),
-            modified: new Date().toISOString()
+          creation_date: new Date().toISOString(),
+          modified: new Date().toISOString()
+        }
+
+        if (this.newPost.attachments.length > 0) {
+          post._attachments = {}
+          for (const attachment of this.newPost.attachments) {
+            const base64Data = await this.fileToBase64(attachment.data)
+            post._attachments[attachment.name] = {
+              content_type: attachment.type,
+              data: base64Data
+            }
           }
         }
 
         await this.localDb.put(post)
-        this.newPost.title = ''
-        this.newPost.content = ''
+        this.resetForm()
         await this.fetchPosts()
-        this.error = null
       } catch (error) {
         console.error('Add error:', error)
-        this.error = 'Erreur lors de l\'ajout du post'
+        this.error = 'Erreur d\'ajout'
       }
     },
 
-    async updatePost(post: Post) {
+    async fileToBase64(blob: Blob): Promise<string> {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onloadend = () => {
+          const base64String = reader.result as string
+          resolve(base64String.split(',')[1])
+        }
+        reader.onerror = reject
+        reader.readAsDataURL(blob)
+      })
+    },
+
+    async downloadAttachment(post: Post, attachmentName: string) {
       if (!this.localDb) return
 
       try {
-        const existingDoc = await this.localDb.get(post._id)
-        const updatedPost = {
-          ...post,
-          _rev: existingDoc._rev,
-          attributes: {
-            ...post.attributes,
-            modified: new Date().toISOString()
+        const attachment = await this.localDb.getAttachment(post._id, attachmentName)
+        if (!attachment) return
+
+        const blob = attachment instanceof Blob ? attachment : new Blob([attachment])
+        const url = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = url
+        link.download = attachmentName
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(url)
+      } catch (error) {
+        console.error('Download error:', error)
+        this.error = 'Erreur de téléchargement'
+      }
+    },
+
+    async searchPosts() {
+      if (!this.localDb) return
+
+      try {
+        const result = await this.localDb.find({
+          selector: {
+            $or: [
+              { title: { $regex: RegExp(this.searchQuery, 'i') } },
+              { content: { $regex: RegExp(this.searchQuery, 'i') } }
+            ]
+          }
+        })
+        this.posts = result.docs as Post[]
+      } catch (error) {
+        console.error('Search error:', error)
+        this.error = 'Erreur de recherche'
+      }
+    },
+
+    async deletePost(postId: string) {
+      if (!this.localDb) return
+
+      try {
+        const post = await this.localDb.get(postId)
+        await this.localDb.remove(post)
+        await this.fetchPosts()
+      } catch (error) {
+        console.error('Delete error:', error)
+        this.error = 'Erreur de suppression'
+      }
+    },
+
+    async editPost(postId: string) {
+      if (!this.localDb) return
+
+      try {
+        const post = await this.localDb.get(postId)
+        this.newPost = {
+          title: post.title,
+          content: post.content,
+          attachments: []
+        }
+        this.isEditing = true
+        this.currentEditId = postId
+      } catch (error) {
+        console.error('Edit error:', error)
+        this.error = 'Erreur de modification'
+      }
+    },
+
+    async updatePost() {
+      if (!this.localDb || !this.currentEditId) return
+
+      try {
+        const post = await this.localDb.get(this.currentEditId)
+        post.title = this.newPost.title.trim()
+        post.content = this.newPost.content.trim()
+        post.modified = new Date().toISOString()
+
+        if (this.newPost.attachments.length > 0) {
+          post._attachments = {}
+          for (const attachment of this.newPost.attachments) {
+            const base64Data = await this.fileToBase64(attachment.data)
+            post._attachments[attachment.name] = {
+              content_type: attachment.type,
+              data: base64Data
+            }
           }
         }
 
-        await this.localDb.put(updatedPost)
+        await this.localDb.put(post)
+        this.resetForm()
         this.isEditing = false
         this.currentEditId = null
         await this.fetchPosts()
-        this.error = null
       } catch (error) {
         console.error('Update error:', error)
-        this.error = 'Erreur lors de la mise à jour du post'
+        this.error = 'Erreur de mise à jour'
       }
     },
 
-    async deletePost(post: Post) {
-      if (!this.localDb || !confirm('Êtes-vous sûr de vouloir supprimer ce post ?')) return
-
-      try {
-        const existingDoc = await this.localDb.get(post._id)
-        await this.localDb.remove(existingDoc)
-        await this.fetchPosts()
-        this.error = null
-      } catch (error) {
-        console.error('Delete error:', error)
-        this.error = 'Erreur lors de la suppression du post'
-      }
-    },
-
-    startEditing(post: Post) {
-      this.isEditing = true
-      this.currentEditId = post._id
-      this.newPost = {
-        title: post.title,
-        content: post.content
-      }
-    },
-
-    cancelEditing() {
-      this.isEditing = false
-      this.currentEditId = null
+    resetForm() {
       this.newPost = {
         title: '',
-        content: ''
+        content: '',
+        attachments: []
       }
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+      if (fileInput) fileInput.value = ''
     }
   },
 
@@ -174,94 +287,46 @@ export default defineComponent({
 })
 </script>
 
-
-
-
-
 <template>
-  <div class="posts-manager">
-    <!-- Error Alert -->
-    <div v-if="error" class="error-alert" role="alert">
-      {{ error }}
-      <button @click="error = null" class="close-button">×</button>
+  <div class="container">
+    <div v-if="error" class="error">{{ error }}</div>
+
+    <div class="search-section">
+      <input v-model="searchQuery" placeholder="Rechercher..." class="input"/>
+      <button @click="searchPosts" class="button">Rechercher</button>
     </div>
 
-    <div class="content-container">
-      <!-- Form Section -->
-      <div class="form-section">
-        <h1 class="section-title">{{ isEditing ? 'Modifier le post' : 'Nouveau post' }}</h1>
-        <form @submit.prevent="isEditing ? updatePost({
-          _id: currentEditId as string,
-          title: newPost.title,
-          content: newPost.content,
-          attributes: {
-            creation_date: new Date().toISOString(),
-            modified: new Date().toISOString()
-          }
-        }) : addPost()" class="post-form">
-          <div class="form-group">
-            <input
-              v-model="newPost.title"
-              placeholder="Titre du post"
-              required
-              class="form-input"
-            />
-          </div>
-          <div class="form-group">
-            <textarea
-              v-model="newPost.content"
-              placeholder="Contenu du post"
-              required
-              class="form-textarea"
-            ></textarea>
-          </div>
-          <div class="button-group">
-            <button type="submit" class="submit-button">
-              {{ isEditing ? 'Mettre à jour' : 'Ajouter' }}
-            </button>
-            <button
-              v-if="isEditing"
-              type="button"
-              @click="cancelEditing"
-              class="cancel-button"
-            >
-              Annuler
-            </button>
-          </div>
-        </form>
-      </div>
+    <div class="form-section">
+      <h2>{{ isEditing ? 'Modifier le post' : 'Nouveau post' }}</h2>
+      <form @submit.prevent="isEditing ? updatePost() : addPost()">
+        <input v-model="newPost.title" placeholder="Titre" required class="input"/>
+        <textarea v-model="newPost.content" placeholder="Contenu" required class="textarea"></textarea>
+        <input type="file" @change="handleFileUpload" class="file-input"/>
+        <button type="submit" class="button">{{ isEditing ? 'Mettre à jour' : 'Ajouter' }}</button>
+      </form>
+    </div>
 
-      <!-- Posts List -->
-      <div class="posts-section">
-        <h2 class="section-title">Posts ({{ posts.length }})</h2>
-        <div class="posts-scrollable">
-          <div v-if="posts.length" class="posts-grid">
-            <div v-for="post in sortedPosts" :key="post._id" class="post-card">
-              <div class="post-card-header">
-                <h3 class="post-title">{{ post.title }}</h3>
-                <div class="post-actions">
-                  <button @click="startEditing(post)" class="icon-button edit-button" title="Modifier">
-                    ✏️
-                  </button>
-                  <button @click="deletePost(post)" class="icon-button delete-button" title="Supprimer">
-                    🗑️
-                  </button>
-                </div>
-              </div>
-              <div class="post-content">
-                <p class="post-text">{{ post.content }}</p>
-              </div>
-              <div class="post-meta">
-                <div class="post-date">
-                  📅 {{ new Date(post.attributes.creation_date).toLocaleDateString() }}
-                </div>
-                <div v-if="post.attributes.modified !== post.attributes.creation_date" class="post-modified">
-                  ✏️ {{ new Date(post.attributes.modified).toLocaleDateString() }}
-                </div>
-              </div>
+    <div class="posts-section">
+      <h2>Posts ({{ sortedPosts.length }})</h2>
+      <div class="posts-grid">
+        <div v-for="post in sortedPosts" :key="post._id" class="post-card">
+          <h3>{{ post.title }}</h3>
+          <p>{{ post.content }}</p>
+          <div v-if="post._attachments" class="attachments">
+            <div v-for="(_, name) in post._attachments" :key="name">
+              <button @click="downloadAttachment(post, String(name))" class="button">
+                📎 Télécharger {{ name }}
+              </button>
             </div>
           </div>
-          <p v-else class="no-posts">Aucun post disponible</p>
+          <div class="dates">
+            <span>📆 : {{ new Date(post.creation_date).toLocaleDateString() }}</span>
+            <span v-if="post.modified !== post.creation_date">
+              ✏️ : {{ new Date(post.modified).toLocaleDateString() }}
+            </span>
+          </div>
+          <button @click="editPost(post._id)" class="button">✏️</button>
+          <button @click="deletePost(post._id)" class="button">🗑️</button>
         </div>
       </div>
     </div>
@@ -269,85 +334,31 @@ export default defineComponent({
 </template>
 
 <style scoped>
-.posts-manager {
-  width: 100%;
-  min-height: 100vh;
-  background-color: #f3f4f6;
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
   padding: 20px;
 }
 
-.content-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: 350px 1fr;
-  gap: 30px;
-  height: calc(100vh - 40px);
+.error {
+  background: #fee2e2;
+  color: #dc2626;
+  padding: 10px;
+  margin-bottom: 20px;
+  border-radius: 4px;
 }
 
-.section-title {
-  color: #1f2937;
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin-bottom: 1.5rem;
+.search-section {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
 }
 
-/* Form Styles */
 .form-section {
   background: white;
-  padding: 24px;
-  border-radius: 12px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  height: fit-content;
-}
-
-.post-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.form-input,
-.form-textarea {
-  width: 100%;
-  padding: 12px;
-  border: 2px solid #e5e7eb;
+  padding: 20px;
   border-radius: 8px;
-  font-size: 1rem;
-  transition: border-color 0.2s ease;
-}
-
-.form-input:focus,
-.form-textarea:focus {
-  border-color: #3b82f6;
-  outline: none;
-}
-
-.form-textarea {
-  min-height: 150px;
-  resize: vertical;
-}
-
-/* Posts Section */
-.posts-section {
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-}
-
-.posts-scrollable {
-  flex-grow: 1;
-  overflow-y: auto;
-  padding-right: 16px;
+  margin-bottom: 20px;
 }
 
 .posts-grid {
@@ -358,179 +369,57 @@ export default defineComponent({
 
 .post-card {
   background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
   padding: 20px;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.post-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-}
-
-.post-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 12px;
-}
-
-.post-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: #1f2937;
-  margin: 0;
-  flex-grow: 1;
-  margin-right: 12px;
-}
-
-.post-content {
-  margin-bottom: 16px;
-}
-
-.post-text {
-  color: #4b5563;
-  line-height: 1.5;
-  margin: 0;
-}
-
-.post-meta {
-  display: flex;
-  gap: 12px;
-  font-size: 0.875rem;
-  color: #6b7280;
-}
-
-.post-date,
-.post-modified {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/* Buttons */
-.button-group {
-  display: flex;
-  gap: 12px;
-}
-
-.submit-button,
-.cancel-button {
-  padding: 12px 24px;
   border-radius: 8px;
-  font-weight: 500;
-  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
-.submit-button {
-  background-color: #3b82f6;
+.input, .select, .textarea {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.button {
+  background: #3b82f6;
   color: white;
+  padding: 8px 16px;
   border: none;
-}
-
-.submit-button:hover {
-  background-color: #2563eb;
-}
-
-.cancel-button {
-  background-color: #f3f4f6;
-  color: #4b5563;
-  border: 1px solid #d1d5db;
-}
-
-.cancel-button:hover {
-  background-color: #e5e7eb;
-}
-
-.icon-button {
-  background: none;
-  border: none;
-  padding: 4px;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 1.25rem;
-  line-height: 1;
-  transition: transform 0.2s ease;
 }
 
-.icon-button:hover {
-  transform: scale(1.1);
+.button:hover {
+  background: #2563eb;
 }
 
-.post-actions {
+.category {
+  color: #666;
+  margin: 10px 0;
+}
+
+.dates {
+  font-size: 0.9em;
+  color: #666;
+  margin-top: 10px;
   display: flex;
-  gap: 8px;
+  flex-direction: column;
 }
 
-/* Error Alert */
-.error-alert {
-  background-color: #fee2e2;
-  border-left: 4px solid #ef4444;
-  color: #dc2626;
-  padding: 12px 40px 12px 16px;
-  margin-bottom: 20px;
-  border-radius: 8px;
-  position: relative;
-}
-
-.close-button {
-  position: absolute;
-  right: 12px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: #dc2626;
-  font-size: 1.25rem;
-  padding: 4px;
-}
-
-.no-posts {
-  text-align: center;
-  color: #6b7280;
-  font-style: italic;
-  padding: 40px 0;
-}
-
-/* Scrollbar Styling */
-.posts-scrollable::-webkit-scrollbar {
-  width: 8px;
-}
-
-.posts-scrollable::-webkit-scrollbar-track {
-  background: #f3f4f6;
-  border-radius: 4px;
-}
-
-.posts-scrollable::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 4px;
-}
-
-.posts-scrollable::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
-}
-
-/* Responsive Design */
-@media (max-width: 1024px) {
-  .content-container {
-    grid-template-columns: 1fr;
-    height: auto;
+@media (max-width: 768px) {
+  .search-section {
+    flex-direction: column;
   }
-
-  .posts-scrollable {
-    max-height: 600px;
-  }
-}
-
-@media (max-width: 640px) {
+  
   .posts-grid {
     grid-template-columns: 1fr;
-  }
-
-  .content-container {
-    padding: 0;
   }
 }
 </style>
