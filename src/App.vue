@@ -5,7 +5,7 @@ import HelloWorld from './components/HelloWorld.vue'
 
 <template>
   <header>
-    <img alt="Vue logo" class="logo" src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTY0R6cOc3NUmYj1pHyZKttCDeoOhn_i8w-9g&s"
+    <img alt="Vue logo" class="logo" src="https://www.zoodejurques.fr/wp-content/uploads/2019/04/Tigre-de-Siberie-5.jpg"
  width="400" height="400" />
 
     <div class="wrapper">
