@@ -302,7 +302,7 @@ export default defineComponent({
         <input v-model="newPost.title" placeholder="Titre" required class="input"/>
         <textarea v-model="newPost.content" placeholder="Contenu" required class="textarea"></textarea>
         <input type="file" @change="handleFileUpload" class="file-input"/>
-        <button type="submit" class="button">{{ isEditing ? 'Mettre à jour' : 'Ajouter' }}</button>
+        <button type="submit" class="button">{{ isEditing ? 'Mettre à jour' : 'Ajouter le post' }}</button>
       </form>
     </div>
 
@@ -325,8 +325,8 @@ export default defineComponent({
               ✏️ : {{ new Date(post.modified).toLocaleDateString() }}
             </span>
           </div>
-          <button @click="editPost(post._id)" class="button">✏️</button>
-          <button @click="deletePost(post._id)" class="button">🗑️</button>
+          <button @click="editPost(post._id)" class="button">Modifier ✏️</button>
+          <button @click="deletePost(post._id)" class="button">Supprimer 🗑️</button>
         </div>
       </div>
     </div>
@@ -352,6 +352,9 @@ export default defineComponent({
   display: flex;
   gap: 10px;
   margin-bottom: 20px;
+  margin-left: 20px;
+  margin-right: 10px;
+
 }
 
 .form-section {
@@ -391,13 +394,17 @@ export default defineComponent({
   background: #3b82f6;
   color: white;
   padding: 8px 16px;
+  margin-bottom: 10px  ;
+  margin-right: 10px  ;
+  margin-top: 5px  ;
+
   border: none;
   border-radius: 4px;
   cursor: pointer;
 }
 
 .button:hover {
-  background: #2563eb;
+  background: #5b8aef;
 }
 
 .category {
@@ -408,7 +415,7 @@ export default defineComponent({
 .dates {
   font-size: 0.9em;
   color: #666;
-  margin-top: 10px;
+  margin-top: 10px;  
   display: flex;
   flex-direction: column;
 }

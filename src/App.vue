@@ -9,11 +9,11 @@ import HelloWorld from './components/HelloWorld.vue'
  width="220" height="220" />
 
     <div class="wrapper">
-      <HelloWorld msg="You did it!" />
+      <HelloWorld msg="Bienvenue" />
 
       <nav>
-        <RouterLink to="/">Home</RouterLink>
-        <RouterLink to="/about">About</RouterLink>
+        <RouterLink to="/">Accueil</RouterLink>
+        <RouterLink to="/about">À propos</RouterLink>
       </nav>
     </div>
   </header>
@@ -37,24 +37,35 @@ nav {
   font-size: 12px;
   text-align: center;
   margin-top: 2rem;
+  color: black;
+
 }
 
+
 nav a.router-link-exact-active {
-  color: var(--color-text);
+  color: black;
 }
 
 nav a.router-link-exact-active:hover {
   background-color: transparent;
+  color: black;
+
 }
 
 nav a {
   display: inline-block;
   padding: 0 1rem;
-  border-left: 1px solid var(--color-border);
+  border-left: 1px solid black;
+  
 }
 
 nav a:first-of-type {
   border: 0;
+  color: black;
+}
+nav a:first-of-type:hover {
+  border: 0;
+  color: white;
 }
 
 @media (min-width: 1024px) {
@@ -62,8 +73,10 @@ nav a:first-of-type {
     display: flex;
     place-items: center;
     padding-right: calc(var(--section-gap) / 2);
+    
   }
 
+  
   .logo {
     margin: 0 2rem 0 0;
   }

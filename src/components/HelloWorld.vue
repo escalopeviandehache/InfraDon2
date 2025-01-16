@@ -8,9 +8,14 @@ defineProps<{
   <div class="greetings">
     <h1 class="green">{{ msg }}</h1>
     <h3>
-      You’ve successfully created a project like a tiger with
-      <a href="https://vitejs.dev/" target="_blank" rel="noopener">Vite</a> +
-      <a href="https://vuejs.org/" target="_blank" rel="noopener">Vue 3</a>. What's next?
+      Vous êtes dans votre Vue, cliquez ici pour accéder à
+      <a
+        href="http://127.0.0.1:5984/_utils/#login"
+        target="_blank"
+        rel="noopener"
+        style="text-decoration: underline"
+        >CouchDB</a
+      >
     </h3>
   </div>
 </template>
@@ -21,10 +26,14 @@ h1 {
   font-size: 2.6rem;
   position: relative;
   top: -10px;
+  color: #659dfe;
 }
 
 h3 {
   font-size: 1.2rem;
+}
+a {
+  color: black;
 }
 
 .greetings h1,
